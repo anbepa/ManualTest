@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-06T00:00:00Z",
+  "run": {
+    "id": "tr-example",
+    "name": "Ejemplo de ejecucion",
+    "huTitle": "HU Demo"
+  },
+  "feature": {
+    "name": "Ejemplo de ejecucion",
+    "description": [
+      "HU: HU Demo"
+    ],
+    "tags": [],
+    "scenarios": [
+      {
+        "name": "Caso de prueba demo",
+        "type": "Scenario",
+        "tags": [],
+        "steps": [
+          {
+            "keyword": "Given",
+            "text": "el usuario abre la aplicacion"
+          },
+          {
+            "keyword": "When",
+            "text": "ingresa credenciales validas"
+          },
+          {
+            "keyword": "Then",
+            "text": "ve el tablero principal"
+          }
+        ]
+      }
+    ]
+  },
+  "results": {
+    "Caso de prueba demo": {
+      "steps": {
+        "0": {
+          "status": "passed",
+          "evidences": [
+            "ev-0-0-0.png"
+          ],
+          "notes": "captura inicial"
+        },
+        "1": {
+          "status": "passed",
+          "evidences": [],
+          "notes": ""
+        },
+        "2": {
+          "status": "passed",
+          "evidences": [
+            "ev-0-2-0.png"
+          ],
+          "notes": "tablero visible"
+        }
+      }
+    }
+  },
+  "evidences": [
+    {
+      "name": "ev-0-0-0.png",
+      "base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    },
+    {
+      "name": "ev-0-2-0.png",
+      "base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    }
+  ]
+}
