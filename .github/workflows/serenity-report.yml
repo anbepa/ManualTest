@@ -1,0 +1,97 @@
+name: Serenity Report
+
+# Genera el reporte Serenity a partir de un "bundle" JSON exportado desde
+# manual-execution (test-plan-app) y publica la carpeta target/ como artifact ZIP.
+#
+# Formas de disparar:
+#  1) Manual (Actions -> Run workflow): usa ci/bundle.json del repo, o una URL.
+#  2) Programatico (repository_dispatch, type=serenity-report) con
+#     client_payload.bundle_url apuntando al JSON (p.ej. Supabase signed URL).
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_url:
+        description: "URL del bundle JSON (opcional; si se omite usa ci/bundle.json)"
+        required: false
+        default: ""
+  repository_dispatch:
+    types: [serenity-report]
+
+permissions:
+  contents: read
+
+jobs:
+  build-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Resolve bundle
+        run: |
+          set -e
+          URL="${{ github.event.inputs.bundle_url }}"
+          if [ -z "$URL" ] && [ -n "${{ github.event.client_payload.bundle_url }}" ]; then
+            URL="${{ github.event.client_payload.bundle_url }}"
+          fi
+          if [ -n "$URL" ]; then
+            echo "Descargando bundle desde URL..."
+            curl -fsSL "$URL" -o bundle.json
+          elif [ -f ci/bundle.json ]; then
+            echo "Usando ci/bundle.json del repositorio"
+            cp ci/bundle.json bundle.json
+          else
+            echo "ERROR: no se proporciono bundle (ni URL ni ci/bundle.json)"; exit 1
+          fi
+          echo "Tamano del bundle: $(wc -c < bundle.json) bytes"
+
+      - name: Materialize (feature + evidencias + resultados)
+        run: node ci/materialize.js bundle.json
+
+      - name: Generate Serenity report
+        continue-on-error: true
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean test aggregate \
+            -Dmanual.headless=true \
+            -Dmanual.results.file="$PWD/webapp/data/manual-results.tsv" \
+            -Dmanual.evidences.dir="$PWD/evidences" \
+            --console=plain --no-daemon --stacktrace
+
+      - name: Verify report was generated
+        run: |
+          if [ ! -f target/site/serenity/index.html ]; then
+            echo "ERROR: no se genero el reporte Serenity (target/site/serenity/index.html)"
+            exit 1
+          fi
+          echo "Reporte Serenity generado correctamente."
+
+      - name: Upload target as ZIP artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: target
+          path: target
+          retention-days: 7
+          if-no-files-found: warn

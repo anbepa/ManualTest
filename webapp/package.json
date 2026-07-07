@@ -1,0 +1,11 @@
+{
+  "name": "manual-bdd-studio",
+  "version": "1.0.0",
+  "description": "Web UI to manage Serenity BDD Gherkin scenarios, evidence and generate reports",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": { "node": ">=16" }
+}

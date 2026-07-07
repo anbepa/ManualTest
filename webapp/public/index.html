@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Manual BDD Studio · Serenity</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🧪</span>
+    <div>
+      <h1>Manual BDD Studio</h1>
+      <small>Serenity BDD · Gherkin · Gestión visual</small>
+    </div>
+  </div>
+  <div class="top-actions">
+    <label class="btn btn-sm" title="Importar reporte JSON exportado desde manual-execution">
+      ⤒ Importar JSON
+      <input id="importInput" type="file" accept="application/json,.json" hidden />
+    </label>
+    <span id="runPill" class="pill pill-idle">● listo</span>
+    <button id="btnRunTop" class="btn btn-primary">▶ Generar Reporte</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="scenarios">1 · Escenarios</button>
+  <button class="tab" data-tab="evidence">2 · Evidencias</button>
+  <button class="tab" data-tab="run">3 · Ejecución &amp; Reporte</button>
+</nav>
+
+<main>
+  <!-- ============ SCENARIOS ============ -->
+  <section id="tab-scenarios" class="tab-panel active">
+    <div class="split">
+      <aside class="col-features">
+        <div class="col-head">
+          <h2>Features</h2>
+          <button id="btnNewFeature" class="btn btn-sm">+ Feature</button>
+        </div>
+        <ul id="featureList" class="feature-list"></ul>
+      </aside>
+      <div class="col-scenarios">
+        <div id="featureHeader" class="feature-header hidden">
+          <div>
+            <h2 id="featureTitle">—</h2>
+            <p id="featureDesc" class="muted"></p>
+            <code id="featureFile" class="chip"></code>
+          </div>
+          <div class="feature-header-actions">
+            <button id="btnAddScenario" class="btn btn-primary btn-sm">+ Escenario</button>
+            <button id="btnDeleteFeature" class="btn btn-danger btn-sm">Eliminar feature</button>
+          </div>
+        </div>
+        <div id="scenarioList" class="scenario-list"></div>
+        <div id="scenarioEmpty" class="empty">Selecciona un feature para ver sus escenarios.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EVIDENCE ============ -->
+  <section id="tab-evidence" class="tab-panel">
+    <div class="col-head">
+      <h2>Evidencias</h2>
+      <label class="btn btn-primary btn-sm">
+        + Subir evidencia
+        <input id="evidenceInput" type="file" accept="image/*,.pdf" multiple hidden />
+      </label>
+    </div>
+    <p class="muted">Se guardan en la carpeta <code>evidences/</code> del proyecto.</p>
+    <div id="evidenceGrid" class="evidence-grid"></div>
+  </section>
+
+  <!-- ============ RUN & REPORT ============ -->
+  <section id="tab-run" class="tab-panel">
+    <div class="run-layout">
+      <div class="run-left">
+        <div class="col-head">
+          <h2>Resultados manuales</h2>
+          <button id="btnRun" class="btn btn-primary">▶ Generar Reporte Serenity</button>
+        </div>
+        <p class="muted">Marca <b>cada paso</b> como pasó o falló y asóciale su evidencia. Al generar, se ejecuta el motor Serenity y cada evidencia queda adjunta a su paso en el reporte.</p>
+        <table class="results-table">
+          <thead><tr><th>Escenario / Paso</th><th>Estado</th><th>Evidencia</th><th>Notas</th></tr></thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <div class="run-right">
+        <div class="col-head">
+          <h2>Consola</h2>
+          <a id="btnReport" class="btn btn-sm" href="/report/" target="_blank" hidden>🔗 Ver Reporte</a>
+        </div>
+        <pre id="console" class="console">Sin ejecuciones todavía.</pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Scenario modal -->
+<div id="scenarioModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="scenarioModalTitle">Nuevo escenario</h3>
+      <button class="icon-btn" data-close-modal>✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Tipo
+        <select id="scType">
+          <option value="Scenario">Scenario</option>
+          <option value="Scenario Outline">Scenario Outline</option>
+        </select>
+      </label>
+      <label>Nombre del escenario
+        <input id="scName" type="text" placeholder="Add two numbers manual" />
+      </label>
+      <label>Tags (opcional, separados por espacio)
+        <input id="scTags" type="text" placeholder="@smoke @manual" />
+      </label>
+      <div class="steps-head">
+        <span>Pasos (Gherkin)</span>
+        <button id="btnAddStep" class="btn btn-sm" type="button">+ Paso</button>
+      </div>
+      <div id="stepsEditor" class="steps-editor"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close-modal>Cancelar</button>
+      <button id="btnSaveScenario" class="btn btn-primary">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Feature modal -->
+<div id="featureModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h3>Nuevo feature</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <div class="modal-body">
+      <label>Archivo (.feature)<input id="ftFile" type="text" placeholder="login.feature" /></label>
+      <label>Nombre del Feature<input id="ftName" type="text" placeholder="User login" /></label>
+      <label>Descripción<textarea id="ftDesc" rows="2" placeholder="As a user I want to log in..."></textarea></label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close-modal>Cancelar</button>
+      <button id="btnSaveFeature" class="btn btn-primary">Crear</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/app.js"></script>
+</body>
+</html>

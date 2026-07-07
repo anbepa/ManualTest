@@ -1,0 +1,85 @@
+plugins {
+    id "net.serenity-bdd.serenity-gradle-plugin" version "4.2.16"
+    id 'java'
+}
+
+group 'co.com.bancolombia.certification'
+version '1.0-SNAPSHOT'
+
+// Repositorios:
+//   - Maven Central: usado por defecto (GitHub Actions / CI). Resuelve TODO
+//     lo necesario para el modo headless (generacion del reporte Serenity).
+//   - Artifactory Bancolombia: SOLO se agrega cuando se compila localmente en
+//     modo escritorio con  -PuseArtifactory  (para incluir el JAR interno).
+repositories {
+    mavenCentral()
+    if (project.hasProperty('useArtifactory')) {
+        maven {
+            url "https://artifactory.apps.bancolombia.com/maven-bancolombia"
+        }
+    }
+}
+
+compileJava.options.encoding = "UTF-8"
+compileTestJava.options.encoding = "UTF-8"
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+ext {
+    serenityVersion = "4.2.34"
+    serenityCucumberVersion = "4.2.34"
+    junitVersion = "5.8.2"
+    slf4j = "2.0.7"
+    jUnitCoreVersion = "4.13.2"
+    lombokVersion = '1.18.34'
+}
+
+dependencies {
+    // Dependencia interna Bancolombia: SOLO para el flujo interactivo de escritorio.
+    // En CI (headless) NO se necesita: ManualResults usa API pura de Serenity + JDK.
+    // La invocacion al JAR interno se hace por reflexion, por lo que el proyecto
+    // COMPILA sin esta dependencia cuando no se pasa -PuseArtifactory.
+    if (project.hasProperty('useArtifactory')) {
+        implementation group: 'co.com.bancolombia.certificacion', name: 'manualtestSerenityBDD', version: '2.0.0'
+    }
+    implementation group: 'net.serenity-bdd', name: 'serenity-junit', version: "$rootProject.ext.serenityVersion"
+    implementation group: 'net.serenity-bdd', name: 'serenity-core', version: "$rootProject.ext.serenityVersion"
+    implementation group: 'net.serenity-bdd', name: 'serenity-screenplay-rest', version: "$rootProject.ext.serenityVersion"
+    implementation group: 'net.serenity-bdd', name: 'serenity-cucumber', version: "$rootProject.ext.serenityCucumberVersion"
+    implementation group: 'org.junit.jupiter', name: 'junit-jupiter-api', version: "$rootProject.ext.junitVersion"
+    implementation group: 'org.junit.jupiter', name: 'junit-jupiter-engine', version: "$rootProject.ext.junitVersion"
+    testImplementation group: 'org.slf4j', name: 'slf4j-api', version: "$rootProject.ext.slf4j"
+    testImplementation group: 'junit', name: 'junit', version: "$rootProject.ext.jUnitCoreVersion"
+}
+
+configurations.all {
+    resolutionStrategy {
+        // Fija la version de cucumber "query" para evitar el rango transitivo [13.x)
+        // que requiere metadata remota. 13.6.0 existe en Maven Central.
+        force "io.cucumber:query:13.6.0"
+    }
+}
+
+test {
+    systemProperties System.getProperties()
+    systemProperty "file.encoding", "ISO-8859-1"
+    systemProperty "feature.file.encoding", "ISO-8859-1"
+    systemProperty "cucumber.options", System.properties.getProperty("cucumber.options")
+    testLogging.showStandardStreams = true
+    finalizedBy(aggregate)
+}
+
+serenity {
+    testRoot = "co.com.bancolombia.certification.datahighway.runners"
+    requirementsDir = "src/test/resources/features"
+    reports = ["single-page-html"]
+}
+
+wrapper {
+    gradleVersion = "8.8"
+}
+
+gradle.startParameter.continueOnFailure = true
