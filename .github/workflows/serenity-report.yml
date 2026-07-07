@@ -56,15 +56,23 @@ jobs:
         run: |
           set -e
           if [ -n "$BUNDLE_URL" ]; then
-            echo "Descargando bundle desde Supabase Storage..."
+            echo "Descargando bundle metadata desde Supabase..."
             curl -fsSL "$BUNDLE_URL" -o bundle.json
           elif [ -f ci/bundle.json ]; then
             echo "Usando ci/bundle.json del repositorio"
             cp ci/bundle.json bundle.json
           else
-            echo "ERROR: no se proporciono bundle (ni URL ni ci/bundle.json)"; exit 1
+            echo "ERROR: no se proporciono bundle"; exit 1
           fi
-          echo "Tamano del bundle: $(wc -c < bundle.json) bytes"
+          echo "Bundle metadata: $(wc -c < bundle.json) bytes"
+
+      - name: Download evidence from Supabase
+        if: env.SUPABASE_URL != ''
+        env:
+          SUPABASE_URL: ${{ github.event.client_payload.supabase_url }}
+          SUPABASE_SERVICE_KEY: ${{ github.event.client_payload.supabase_service_key }}
+          EVIDENCE_BUCKET: ${{ github.event.client_payload.evidence_bucket }}
+        run: node ci/download-evidence.js bundle.json evidences
 
       - name: Materialize (feature + evidencias + resultados)
         run: node ci/materialize.js bundle.json
