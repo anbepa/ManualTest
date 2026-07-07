@@ -5,12 +5,14 @@ run-name: Serenity ${{ github.event.client_payload.job_id || 'manual' }}
 # manual-execution (test-plan-app).
 #
 # Disparadores:
-#  1) workflow_dispatch (manual): usa ci/bundle.json o una URL, y publica el
-#     resultado como artifact ZIP descargable.
+#  1) workflow_dispatch (manual): usa ci/bundle.json o una URL (bundle_url).
 #  2) repository_dispatch (desde la app, type=serenity-report): descarga el
-#     bundle desde client_payload.bundle_url, genera el reporte y ademas lo
-#     sube (target.zip + status.json) a las signed URLs de Supabase incluidas
-#     en el payload, para que la app lo descargue directamente.
+#     bundle desde client_payload.bundle_url (un Gist secreto creado por la
+#     funcion serverless /api/serenity-dispatch) y genera el reporte.
+#
+# El resultado se publica SIEMPRE como artifact "target" (se descarga como
+# target.zip). La app lo resuelve y lo descarga via /api/serenity-dispatch.
+# No se usa Supabase ni ningun secreto dentro del workflow.
 
 on:
   workflow_dispatch:
@@ -30,9 +32,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUNDLE_URL: ${{ github.event.inputs.bundle_url || github.event.client_payload.bundle_url }}
-      STATUS_UPLOAD_URL: ${{ github.event.client_payload.status_upload_url }}
-      TARGET_UPLOAD_URL: ${{ github.event.client_payload.target_upload_url }}
-      JOB_ID: ${{ github.event.client_payload.job_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,46 +94,14 @@ jobs:
             echo "No se genero el reporte Serenity."
           fi
 
-      - name: Zip target
-        if: always()
-        run: |
-          if [ -d target ]; then zip -qr target.zip target; echo "target.zip: $(wc -c < target.zip) bytes"; fi
-
-      - name: Upload target as ZIP artifact
+      - name: Upload target as artifact (target.zip)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: target
-          path: target.zip
+          path: target
           retention-days: 7
           if-no-files-found: warn
-
-      - name: Publish result to Supabase (repository_dispatch)
-        if: always() && env.STATUS_UPLOAD_URL != ''
-        run: |
-          set +e
-          STATE="failure"
-          if [ "$REPORT_OK" = "1" ]; then STATE="success"; fi
-
-          if [ "$STATE" = "success" ] && [ -f target.zip ] && [ -n "$TARGET_UPLOAD_URL" ]; then
-            echo "Subiendo target.zip a Supabase..."
-            curl -sS -X PUT "$TARGET_UPLOAD_URL" \
-              -H "content-type: application/zip" \
-              -H "x-upsert: true" \
-              --data-binary @target.zip
-            echo ""
-          fi
-
-          printf '{"jobId":"%s","state":"%s","runId":"%s","runUrl":"%s","finishedAt":"%s"}' \
-            "$JOB_ID" "$STATE" "$GITHUB_RUN_ID" \
-            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            "$(date -u +%FT%TZ)" > status.json
-          echo "Subiendo status.json ($STATE) a Supabase..."
-          curl -sS -X PUT "$STATUS_UPLOAD_URL" \
-            -H "content-type: application/json" \
-            -H "x-upsert: true" \
-            --data-binary @status.json
-          echo ""
 
       - name: Fail if report missing
         if: always() && env.REPORT_OK != '1'
