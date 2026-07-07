@@ -1,20 +1,11 @@
 name: Serenity Report
 run-name: Serenity ${{ github.event.client_payload.job_id || 'manual' }}
 
-# Genera el reporte Serenity a partir de un bundle JSON completo (con evidencias
-# base64 embebidas) subido a Supabase Storage. La Vercel function /api/serenity-report
-# genera una URL firmada y la envia como client_payload.bundle_url.
-#
-# Disparadores:
-#  1) workflow_dispatch (manual): usa ci/bundle.json o una URL (bundle_url).
-#  2) repository_dispatch (type=serenity-report): descarga el bundle desde
-#     client_payload.bundle_url (URL firmada de Supabase Storage).
-
 on:
   workflow_dispatch:
     inputs:
       bundle_url:
-        description: "URL del bundle JSON (opcional; si se omite usa ci/bundle.json)"
+        description: "URL del bundle JSON o .json.gz"
         required: false
         default: ""
   repository_dispatch:
@@ -27,11 +18,7 @@ jobs:
   build-report:
     runs-on: ubuntu-latest
     env:
-      BUNDLE_URL: ${{ github.event.inputs.bundle_url }}
-      BUNDLE_STORAGE_PATH: ${{ github.event.client_payload.bundle_storage_path }}
-      SUPABASE_URL: ${{ github.event.client_payload.supabase_url }}
-      SUPABASE_SERVICE_KEY: ${{ github.event.client_payload.supabase_service_key }}
-      EVIDENCE_BUCKET: ${{ github.event.client_payload.evidence_bucket }}
+      BUNDLE_URL: ${{ github.event.inputs.bundle_url || github.event.client_payload.bundle_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,30 +43,21 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Install Supabase client
-        if: env.SUPABASE_SERVICE_KEY != ''
-        run: npm install --no-save @supabase/supabase-js ws
-
-      - name: Download bundle from Supabase
+      - name: Download & decompress bundle
         run: |
           set -e
           if [ -n "$BUNDLE_URL" ]; then
-            echo "Descargando bundle desde URL (workflow_dispatch)..."
-            curl -fsSL "$BUNDLE_URL" -o bundle.json
-          elif [ -n "$BUNDLE_STORAGE_PATH" ] && [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_KEY" ]; then
-            echo "Descargando bundle desde Supabase Storage..."
-            node ci/download-evidence.js --bundle "$BUNDLE_STORAGE_PATH" bundle.json
+            echo "Descargando bundle..."
+            curl -fsSL "$BUNDLE_URL" -o bundle.json.gz
+            echo "Descomprimiendo..."
+            gunzip -f bundle.json.gz
           elif [ -f ci/bundle.json ]; then
-            echo "Usando ci/bundle.json del repositorio"
+            echo "Usando ci/bundle.json"
             cp ci/bundle.json bundle.json
           else
-            echo "ERROR: no se proporciono bundle"; exit 1
+            echo "ERROR: no bundle"; exit 1
           fi
           echo "Bundle: $(wc -c < bundle.json) bytes"
-
-      - name: Download evidence from Supabase
-        if: env.SUPABASE_SERVICE_KEY != ''
-        run: node ci/download-evidence.js --evidence bundle.json evidences
 
       - name: Materialize (feature + evidencias + resultados)
         run: node ci/materialize.js bundle.json
@@ -105,7 +83,7 @@ jobs:
             echo "No se genero el reporte Serenity."
           fi
 
-      - name: Upload target as artifact (target.zip)
+      - name: Upload target as artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
