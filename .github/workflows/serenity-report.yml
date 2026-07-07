@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUNDLE_URL: ${{ github.event.inputs.bundle_url || github.event.client_payload.bundle_url }}
+      GIST_CLONE_URL: ${{ github.event.client_payload.gist_clone_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,8 +71,21 @@ jobs:
           fi
           echo "Tamano del bundle: $(wc -c < bundle.json) bytes"
 
+      - name: Clone Gist (evidence files)
+        if: env.GIST_CLONE_URL != ''
+        run: |
+          echo "Clonando Gist con evidencias..."
+          git clone "$GIST_CLONE_URL" gist-evidence
+          echo "Archivos en el gist:"
+          ls -la gist-evidence/
+
       - name: Materialize (feature + evidencias + resultados)
-        run: node ci/materialize.js bundle.json
+        run: |
+          if [ -d gist-evidence ]; then
+            node ci/materialize.js bundle.json --evidence-dir gist-evidence
+          else
+            node ci/materialize.js bundle.json
+          fi
 
       - name: Generate Serenity report
         id: gen
