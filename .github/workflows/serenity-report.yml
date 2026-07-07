@@ -1,18 +1,14 @@
 name: Serenity Report
 run-name: Serenity ${{ github.event.client_payload.job_id || 'manual' }}
 
-# Genera el reporte Serenity a partir de un "bundle" JSON exportado desde
-# manual-execution (test-plan-app).
+# Genera el reporte Serenity a partir de un bundle JSON completo (con evidencias
+# base64 embebidas) subido a Supabase Storage. La Vercel function /api/serenity-report
+# genera una URL firmada y la envia como client_payload.bundle_url.
 #
 # Disparadores:
 #  1) workflow_dispatch (manual): usa ci/bundle.json o una URL (bundle_url).
-#  2) repository_dispatch (desde la app, type=serenity-report): descarga el
-#     bundle desde client_payload.bundle_url (un Gist secreto creado por la
-#     funcion serverless /api/serenity-dispatch) y genera el reporte.
-#
-# El resultado se publica SIEMPRE como artifact "target" (se descarga como
-# target.zip). La app lo resuelve y lo descarga via /api/serenity-dispatch.
-# No se usa Supabase ni ningun secreto dentro del workflow.
+#  2) repository_dispatch (type=serenity-report): descarga el bundle desde
+#     client_payload.bundle_url (URL firmada de Supabase Storage).
 
 on:
   workflow_dispatch:
@@ -32,7 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUNDLE_URL: ${{ github.event.inputs.bundle_url || github.event.client_payload.bundle_url }}
-      GIST_CLONE_URL: ${{ github.event.client_payload.gist_clone_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,11 +52,11 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Resolve bundle
+      - name: Download bundle (Supabase signed URL)
         run: |
           set -e
           if [ -n "$BUNDLE_URL" ]; then
-            echo "Descargando bundle desde URL..."
+            echo "Descargando bundle desde Supabase Storage..."
             curl -fsSL "$BUNDLE_URL" -o bundle.json
           elif [ -f ci/bundle.json ]; then
             echo "Usando ci/bundle.json del repositorio"
@@ -71,21 +66,8 @@ jobs:
           fi
           echo "Tamano del bundle: $(wc -c < bundle.json) bytes"
 
-      - name: Clone Gist (evidence files)
-        if: env.GIST_CLONE_URL != ''
-        run: |
-          echo "Clonando Gist con evidencias..."
-          git clone "$GIST_CLONE_URL" gist-evidence
-          echo "Archivos en el gist:"
-          ls -la gist-evidence/
-
       - name: Materialize (feature + evidencias + resultados)
-        run: |
-          if [ -d gist-evidence ]; then
-            node ci/materialize.js bundle.json --evidence-dir gist-evidence
-          else
-            node ci/materialize.js bundle.json
-          fi
+        run: node ci/materialize.js bundle.json
 
       - name: Generate Serenity report
         id: gen
