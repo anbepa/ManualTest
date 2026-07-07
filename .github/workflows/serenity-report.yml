@@ -27,7 +27,11 @@ jobs:
   build-report:
     runs-on: ubuntu-latest
     env:
-      BUNDLE_URL: ${{ github.event.inputs.bundle_url || github.event.client_payload.bundle_url }}
+      BUNDLE_URL: ${{ github.event.inputs.bundle_url }}
+      BUNDLE_STORAGE_PATH: ${{ github.event.client_payload.bundle_storage_path }}
+      SUPABASE_URL: ${{ github.event.client_payload.supabase_url }}
+      SUPABASE_SERVICE_KEY: ${{ github.event.client_payload.supabase_service_key }}
+      EVIDENCE_BUCKET: ${{ github.event.client_payload.evidence_bucket }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,26 +56,28 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Download bundle (Supabase signed URL)
+      - name: Download bundle from Supabase
         run: |
           set -e
           if [ -n "$BUNDLE_URL" ]; then
-            echo "Descargando bundle metadata desde Supabase..."
+            echo "Descargando bundle desde URL (workflow_dispatch)..."
             curl -fsSL "$BUNDLE_URL" -o bundle.json
+          elif [ -n "$BUNDLE_STORAGE_PATH" ] && [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_KEY" ]; then
+            echo "Descargando bundle desde Supabase Storage..."
+            BUNDLE_PATH=$(echo "$BUNDLE_STORAGE_PATH" | sed 's|^execution-evidence/||')
+            curl -fsSL -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+              "$SUPABASE_URL/storage/v1/object/$BUNDLE_STORAGE_PATH" \
+              -o bundle.json
           elif [ -f ci/bundle.json ]; then
             echo "Usando ci/bundle.json del repositorio"
             cp ci/bundle.json bundle.json
           else
             echo "ERROR: no se proporciono bundle"; exit 1
           fi
-          echo "Bundle metadata: $(wc -c < bundle.json) bytes"
+          echo "Bundle: $(wc -c < bundle.json) bytes"
 
       - name: Download evidence from Supabase
-        if: env.SUPABASE_URL != ''
-        env:
-          SUPABASE_URL: ${{ github.event.client_payload.supabase_url }}
-          SUPABASE_SERVICE_KEY: ${{ github.event.client_payload.supabase_service_key }}
-          EVIDENCE_BUCKET: ${{ github.event.client_payload.evidence_bucket }}
+        if: env.SUPABASE_SERVICE_KEY != ''
         run: node ci/download-evidence.js bundle.json evidences
 
       - name: Materialize (feature + evidencias + resultados)
