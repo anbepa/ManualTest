@@ -58,7 +58,7 @@ jobs:
 
       - name: Install Supabase client
         if: env.SUPABASE_SERVICE_KEY != ''
-        run: npm install --no-save @supabase/supabase-js
+        run: npm install --no-save @supabase/supabase-js ws
 
       - name: Download bundle from Supabase
         run: |

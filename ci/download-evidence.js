@@ -26,6 +26,8 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 let _supabase = null;
 function getSupabase() {
   if (!_supabase) {
+    // Polyfill WebSocket for Node.js < 22
+    try { globalThis.WebSocket = require("ws"); } catch (_) {}
     const { createClient } = require("@supabase/supabase-js");
     _supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
