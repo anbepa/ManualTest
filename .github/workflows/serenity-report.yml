@@ -1,12 +1,16 @@
 name: Serenity Report
+run-name: Serenity ${{ github.event.client_payload.job_id || 'manual' }}
 
 # Genera el reporte Serenity a partir de un "bundle" JSON exportado desde
-# manual-execution (test-plan-app) y publica la carpeta target/ como artifact ZIP.
+# manual-execution (test-plan-app).
 #
-# Formas de disparar:
-#  1) Manual (Actions -> Run workflow): usa ci/bundle.json del repo, o una URL.
-#  2) Programatico (repository_dispatch, type=serenity-report) con
-#     client_payload.bundle_url apuntando al JSON (p.ej. Supabase signed URL).
+# Disparadores:
+#  1) workflow_dispatch (manual): usa ci/bundle.json o una URL, y publica el
+#     resultado como artifact ZIP descargable.
+#  2) repository_dispatch (desde la app, type=serenity-report): descarga el
+#     bundle desde client_payload.bundle_url, genera el reporte y ademas lo
+#     sube (target.zip + status.json) a las signed URLs de Supabase incluidas
+#     en el payload, para que la app lo descargue directamente.
 
 on:
   workflow_dispatch:
@@ -24,6 +28,11 @@ permissions:
 jobs:
   build-report:
     runs-on: ubuntu-latest
+    env:
+      BUNDLE_URL: ${{ github.event.inputs.bundle_url || github.event.client_payload.bundle_url }}
+      STATUS_UPLOAD_URL: ${{ github.event.client_payload.status_upload_url }}
+      TARGET_UPLOAD_URL: ${{ github.event.client_payload.target_upload_url }}
+      JOB_ID: ${{ github.event.client_payload.job_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,13 +60,9 @@ jobs:
       - name: Resolve bundle
         run: |
           set -e
-          URL="${{ github.event.inputs.bundle_url }}"
-          if [ -z "$URL" ] && [ -n "${{ github.event.client_payload.bundle_url }}" ]; then
-            URL="${{ github.event.client_payload.bundle_url }}"
-          fi
-          if [ -n "$URL" ]; then
+          if [ -n "$BUNDLE_URL" ]; then
             echo "Descargando bundle desde URL..."
-            curl -fsSL "$URL" -o bundle.json
+            curl -fsSL "$BUNDLE_URL" -o bundle.json
           elif [ -f ci/bundle.json ]; then
             echo "Usando ci/bundle.json del repositorio"
             cp ci/bundle.json bundle.json
@@ -70,6 +75,7 @@ jobs:
         run: node ci/materialize.js bundle.json
 
       - name: Generate Serenity report
+        id: gen
         continue-on-error: true
         run: |
           chmod +x ./gradlew
@@ -79,19 +85,59 @@ jobs:
             -Dmanual.evidences.dir="$PWD/evidences" \
             --console=plain --no-daemon --stacktrace
 
-      - name: Verify report was generated
+      - name: Check report
         run: |
-          if [ ! -f target/site/serenity/index.html ]; then
-            echo "ERROR: no se genero el reporte Serenity (target/site/serenity/index.html)"
-            exit 1
+          if [ -f target/site/serenity/index.html ]; then
+            echo "REPORT_OK=1" >> "$GITHUB_ENV"
+            echo "Reporte Serenity generado correctamente."
+          else
+            echo "REPORT_OK=0" >> "$GITHUB_ENV"
+            echo "No se genero el reporte Serenity."
           fi
-          echo "Reporte Serenity generado correctamente."
+
+      - name: Zip target
+        if: always()
+        run: |
+          if [ -d target ]; then zip -qr target.zip target; echo "target.zip: $(wc -c < target.zip) bytes"; fi
 
       - name: Upload target as ZIP artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: target
-          path: target
+          path: target.zip
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Publish result to Supabase (repository_dispatch)
+        if: always() && env.STATUS_UPLOAD_URL != ''
+        run: |
+          set +e
+          STATE="failure"
+          if [ "$REPORT_OK" = "1" ]; then STATE="success"; fi
+
+          if [ "$STATE" = "success" ] && [ -f target.zip ] && [ -n "$TARGET_UPLOAD_URL" ]; then
+            echo "Subiendo target.zip a Supabase..."
+            curl -sS -X PUT "$TARGET_UPLOAD_URL" \
+              -H "content-type: application/zip" \
+              -H "x-upsert: true" \
+              --data-binary @target.zip
+            echo ""
+          fi
+
+          printf '{"jobId":"%s","state":"%s","runId":"%s","runUrl":"%s","finishedAt":"%s"}' \
+            "$JOB_ID" "$STATE" "$GITHUB_RUN_ID" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "$(date -u +%FT%TZ)" > status.json
+          echo "Subiendo status.json ($STATE) a Supabase..."
+          curl -sS -X PUT "$STATUS_UPLOAD_URL" \
+            -H "content-type: application/json" \
+            -H "x-upsert: true" \
+            --data-binary @status.json
+          echo ""
+
+      - name: Fail if report missing
+        if: always() && env.REPORT_OK != '1'
+        run: |
+          echo "El reporte Serenity no se genero."
+          exit 1
