@@ -64,10 +64,7 @@ jobs:
             curl -fsSL "$BUNDLE_URL" -o bundle.json
           elif [ -n "$BUNDLE_STORAGE_PATH" ] && [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_KEY" ]; then
             echo "Descargando bundle desde Supabase Storage..."
-            BUNDLE_PATH=$(echo "$BUNDLE_STORAGE_PATH" | sed 's|^execution-evidence/||')
-            curl -fsSL -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-              "$SUPABASE_URL/storage/v1/object/$BUNDLE_STORAGE_PATH" \
-              -o bundle.json
+            node ci/download-evidence.js --bundle "$BUNDLE_STORAGE_PATH" bundle.json
           elif [ -f ci/bundle.json ]; then
             echo "Usando ci/bundle.json del repositorio"
             cp ci/bundle.json bundle.json
@@ -78,7 +75,7 @@ jobs:
 
       - name: Download evidence from Supabase
         if: env.SUPABASE_SERVICE_KEY != ''
-        run: node ci/download-evidence.js bundle.json evidences
+        run: node ci/download-evidence.js --evidence bundle.json evidences
 
       - name: Materialize (feature + evidencias + resultados)
         run: node ci/materialize.js bundle.json
