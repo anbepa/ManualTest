@@ -1,17 +1,17 @@
 "use strict";
-// CI tool: downloads files from Supabase Storage using the service key.
+// CI tool: downloads files from Supabase Storage using the official JS client.
+// The REST API was unreliable; @supabase/supabase-js handles auth correctly.
 //
 // Usage:
 //   node ci/download-evidence.js --bundle <storagePath> <outFile>
-//     Downloads a single file (the metadata bundle) by its full storage path.
+//     storagePath is just the file path inside the bucket (no bucket prefix).
+//     Example: 754f69.../temp/serenity-xxx.json
 //
 //   node ci/download-evidence.js --evidence <bundle.json> <outDir>
-//     Reads bundle.evidenceMap and downloads all evidence images in parallel.
+//     Reads bundle.evidenceMap and downloads all evidence images.
 
 const fs = require("fs");
 const path = require("path");
-const https = require("https");
-const http = require("http");
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
@@ -22,70 +22,52 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   process.exit(1);
 }
 
-function download(supabasePath, destPath) {
-  return new Promise((resolve, reject) => {
-    const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(supabasePath.replace(/\//g, '___'))}`;
-    // Try without encoding first, then with per-segment encoding
-    const tryUrls = [
-      `${SUPABASE_URL}/storage/v1/object/${supabasePath}`,
-    ];
+// Lazy-load supabase client (installed by workflow)
+let _supabase = null;
+function getSupabase() {
+  if (!_supabase) {
+    const { createClient } = require("@supabase/supabase-js");
+    _supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return _supabase;
+}
 
-    let attemptIdx = 0;
+async function downloadFile(bucketPath, destPath) {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.storage.from(BUCKET).download(bucketPath);
 
-    function attempt() {
-      if (attemptIdx >= tryUrls.length) {
-        return reject(new Error(`All URLs failed for ${supabasePath}`));
-      }
-      const tryUrl = tryUrls[attemptIdx++];
+  if (error) {
+    throw new Error(`Supabase download error: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("No data returned");
+  }
 
-      const parsed = new URL(tryUrl);
-      const mod = parsed.protocol === "https:" ? https : http;
+  const dir = path.dirname(destPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-      const req = mod.get(tryUrl, {
-        headers: {
-          "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
-          "User-Agent": "ManualTest-CI",
-        },
-      }, (res) => {
-        if (res.statusCode === 200) {
-          const chunks = [];
-          res.on("data", (c) => chunks.push(c));
-          res.on("end", () => {
-            const dir = path.dirname(destPath);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(destPath, Buffer.concat(chunks));
-            resolve();
-          });
-        } else if (res.statusCode === 400 || res.statusCode === 404) {
-          // Try next URL format
-          attempt();
-        } else {
-          let body = "";
-          res.on("data", (c) => body += c.toString());
-          res.on("end", () => reject(new Error(`HTTP ${res.statusCode}: ${body.slice(0, 200)}`)));
-        }
-      });
-
-      req.on("error", (e) => reject(e));
-      req.setTimeout(30000, () => { req.destroy(); reject(new Error("timeout")); });
-    }
-
-    attempt();
-  });
+  const buffer = Buffer.from(await data.arrayBuffer());
+  fs.writeFileSync(destPath, buffer);
 }
 
 async function downloadBundle() {
-  const bundleStoragePath = process.argv[3];
+  const storagePath = process.argv[3];
   const outFile = process.argv[4];
 
-  if (!bundleStoragePath || !outFile) {
+  if (!storagePath || !outFile) {
     console.error("Usage: node ci/download-evidence.js --bundle <storagePath> <outFile>");
     process.exit(1);
   }
 
-  console.log(`[download] Descargando bundle: ${bundleStoragePath}`);
-  await download(bundleStoragePath, outFile);
-  console.log(`[download] Bundle guardado: ${outFile} (${fs.statSync(outFile).size} bytes)`);
+  // storagePath from Vercel is "execution-evidence/userId/temp/file.json"
+  // Strip bucket prefix if present
+  const bucketPath = storagePath.replace(/^execution-evidence\//, "");
+
+  console.log(`[download] Descargando bundle: ${bucketPath}`);
+  await downloadFile(bucketPath, outFile);
+  console.log(`[download] Bundle: ${outFile} (${fs.statSync(outFile).size} bytes)`);
 }
 
 async function downloadEvidence() {
@@ -122,7 +104,8 @@ async function downloadEvidence() {
     const results = await Promise.allSettled(
       batch.map(([bundleName, supabasePath]) => {
         const destPath = path.join(outDir, bundleName);
-        return download(supabasePath, destPath);
+        // evidenceMap values are like "userId/execId/imgId.ext"
+        return downloadFile(supabasePath, destPath);
       })
     );
 
@@ -144,11 +127,16 @@ async function downloadEvidence() {
 
 // ── Entry point ──
 const mode = process.argv[2];
-if (mode === "--bundle") {
-  downloadBundle().catch((e) => { console.error(e.message); process.exit(1); });
-} else if (mode === "--evidence") {
-  downloadEvidence().catch((e) => { console.error(e.message); process.exit(1); });
-} else {
-  console.error("Usage: --bundle <path> <out> | --evidence <bundle.json> <dir>");
+(async () => {
+  if (mode === "--bundle") {
+    await downloadBundle();
+  } else if (mode === "--evidence") {
+    await downloadEvidence();
+  } else {
+    console.error("Usage: --bundle <path> <out> | --evidence <bundle.json> <dir>");
+    process.exit(1);
+  }
+})().catch((e) => {
+  console.error("[download] ERROR:", e.message);
   process.exit(1);
-}
+});

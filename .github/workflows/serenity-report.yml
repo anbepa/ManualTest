@@ -56,6 +56,10 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      - name: Install Supabase client
+        if: env.SUPABASE_SERVICE_KEY != ''
+        run: npm install --no-save @supabase/supabase-js
+
       - name: Download bundle from Supabase
         run: |
           set -e
