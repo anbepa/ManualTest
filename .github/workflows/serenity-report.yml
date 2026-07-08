@@ -48,9 +48,7 @@ jobs:
           set -e
           if [ -n "$BUNDLE_URL" ]; then
             echo "Descargando bundle..."
-            curl -fsSL "$BUNDLE_URL" -o bundle.json.gz
-            echo "Descomprimiendo..."
-            gunzip -f bundle.json.gz
+            curl -fsSL "$BUNDLE_URL" -o bundle.json
           elif [ -f ci/bundle.json ]; then
             echo "Usando ci/bundle.json"
             cp ci/bundle.json bundle.json
