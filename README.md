@@ -21,6 +21,46 @@ El bundle es autocontenido: escenarios ya convertidos a Gherkin y evidencias en
 base64. La conversion reutiliza la MISMA logica del Manual BDD Studio local
 (`webapp/lib/importer.js`), por lo que el formato es identico.
 
+---
+
+## Configuración desde test-plan-app
+
+Desde el panel **Configuración → Integración Serenity** en test-plan-app
+cada usuario registra sus propios datos de GitHub. El token **nunca** se
+expone en el frontend; se guarda cifrado en Supabase Vault y el backend lo
+lee en tiempo de ejecución.
+
+### Campos del formulario y valores esperados
+
+| Campo | Descripción | Ejemplo |
+|---|---|---|
+| **GitHub Username** | Tu nombre de usuario en GitHub (quien posee el token) | `anbepa` |
+| **Repository Owner** | Dueño del repositorio que contiene este workflow (puede ser tu usuario u organización) | `anbepa` |
+| **Repository Name** | Nombre exacto de este repositorio en GitHub | `ManualTest` |
+| **Workflow File Name** | Nombre del archivo `.yml` del workflow (no la ruta completa) | `serenity-report.yml` |
+| **Branch** | Rama del repositorio desde la que se disparará el workflow | `main` |
+| **Nombre del Workflow Serenity** | Nombre visible del workflow (campo `name:` en el YML) | `Serenity Report` |
+| **URL del repositorio** | URL pública del repositorio (opcional; se autogenera si está vacío) | `https://github.com/anbepa/ManualTest` |
+| **GitHub Personal Access Token** | Token con los scopes `repo` y `workflow` — se guarda cifrado, no se muestra después | `ghp_xxxxxxxxxxxxxxxxxxxx` |
+
+### Scopes requeridos en el Personal Access Token
+
+El token debe tener habilitados los siguientes permisos:
+
+- `repo` — para leer y disparar workflows en el repositorio
+- `workflow` — para disparar `workflow_dispatch`
+- `gist` — para crear y eliminar Gists (usado como almacenamiento temporal del bundle)
+
+Puedes crearlo en: **GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token**.
+
+### Verificar la configuración
+
+Una vez guardado, el botón **Guardar configuración Serenity** valida
+automáticamente el acceso al repositorio y al workflow. Si el token o el
+repositorio son incorrectos verás el error específico.
+
+---
+
 ## Ejecutar el workflow
 
 ### Opcion A — Manual (para probar)
@@ -29,16 +69,30 @@ base64. La conversion reutiliza la MISMA logica del Manual BDD Studio local
 3. Sin URL usa `ci/bundle.json` (ejemplo incluido). Al terminar, descarga el
    artifact **target** (se baja como `target.zip`).
 
-### Opcion B — Programatico (integracion)
-Dispara `repository_dispatch` con `event_type: serenity-report` y
-`client_payload.bundle_url` apuntando al JSON (p.ej. una signed URL de Supabase):
+### Opcion B — Automatico desde test-plan-app
+El botón **Serenity** en la pantalla de ejecución manual:
+1. Construye el bundle de la ejecución.
+2. Crea un Gist privado temporal con el bundle.
+3. Dispara el workflow via `workflow_dispatch` con el `bundle_url`.
+4. Hace polling del estado hasta que el artifact esté listo.
+5. Descarga automáticamente el `.zip` con el reporte.
+
+### Opcion C — Programatico via curl
 
 ```bash
+# workflow_dispatch (recomendado)
 curl -X POST \
-  -H "Authorization: token <GH_TOKEN>" \
+  -H "Authorization: Bearer <GH_TOKEN>" \
   -H "Accept: application/vnd.github+json" \
-  https://api.github.com/repos/<owner>/<repo>/dispatches \
-  -d '{"event_type":"serenity-report","client_payload":{"bundle_url":"https://..."}}'
+  https://api.github.com/repos/<owner>/ManualTest/actions/workflows/serenity-report.yml/dispatches \
+  -d '{"ref":"main","inputs":{"job_id":"mi-job","bundle_url":"https://..."}}'  
+
+# repository_dispatch (alternativo)
+curl -X POST \
+  -H "Authorization: Bearer <GH_TOKEN>" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/<owner>/ManualTest/dispatches \
+  -d '{"event_type":"serenity-report","client_payload":{"job_id":"mi-job","bundle_url":"https://..."}}'
 ```
 
 ## Maven Central vs Artifactory

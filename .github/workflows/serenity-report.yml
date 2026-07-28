@@ -1,9 +1,13 @@
 name: Serenity Report
-run-name: Serenity ${{ github.event.client_payload.job_id || 'manual' }}
+run-name: Serenity ${{ github.event.inputs.job_id || github.event.client_payload.job_id || 'manual' }}
 
 on:
   workflow_dispatch:
     inputs:
+      job_id:
+        description: "Identificador de la ejecución"
+        required: false
+        default: ""
       bundle_url:
         description: "URL del bundle JSON o .json.gz"
         required: false
